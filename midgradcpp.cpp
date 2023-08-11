@@ -50,7 +50,6 @@ int main(int argc, char* argv[]) {
     file.read(fileBytes, size);
     file.close();
 
-    //TODO check size
     IMAGE_DOS_HEADER* dosHeader = (IMAGE_DOS_HEADER*)fileBytes;
 
     if (dosHeader->e_magic != 0x5A4D) {
@@ -141,18 +140,15 @@ int main(int argc, char* argv[]) {
     // NOTE: Assuming parsing the dll export talbe is not in the scope of the task.
     DWORD sectionPos = (DWORD)sectionsEndVA;
 
-    //const char* dllName = "dll.dll";
-    const char* dllName = "lua511.dll";
+    const char* dllName = "dll.dll";
     DWORD dllNameAddress = sectionPos;
     sectionPos += (DWORD)(strlen(dllName) + 1);
 
-    //const WORD hint = 0;
     const WORD hint = 0;
     DWORD hintAddress = sectionPos;
     sectionPos += sizeof(WORD);
 
-    //const char* functionName = "?callMe@@YAXXZ";
-    const char* functionName = "lua_call";
+    const char* functionName = "?callMe@@YAXXZ";
     DWORD funcNameAddress = sectionPos;
     sectionPos += (DWORD)(strlen(functionName) + 1);
     
@@ -180,7 +176,7 @@ int main(int argc, char* argv[]) {
     newSectionHeader.SizeOfRawData = alignAddress(totalSectionSize, peHeader->OptionalHeader.FileAlignment);
     newSectionHeader.VirtualAddress = sectionsEndVA;
     newSectionHeader.Misc.VirtualSize = alignAddress(totalSectionSize, sectionAlignment);
-    newSectionHeader.Characteristics = IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ;
+    newSectionHeader.Characteristics = IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE;
 
     DWORD lastSectionHeaderOffset = (DWORD)((char*)&sections[peHeader->FileHeader.NumberOfSections] - fileBytes);
 
@@ -222,9 +218,6 @@ int main(int argc, char* argv[]) {
     }
 	outFile.write((char*)&descriptor, sizeof(IMAGE_IMPORT_DESCRIPTOR));
 
-    for (DWORD i = 0; i < sizeof(IMAGE_IMPORT_DESCRIPTOR); i++) {
-        //outFile.write(&z, sizeof(char));
-    }
     for (DWORD i = 0; i < sizeof(IMAGE_IMPORT_DESCRIPTOR); i++) {
         outFile.write(&z, sizeof(char));
     }
