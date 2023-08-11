@@ -1,6 +1,8 @@
 #include <iostream>
 #include <fstream>
+#include <string>
 #include <Windows.h>
+#include <filesystem>
 using namespace std;
 
 bool is32Bit(IMAGE_NT_HEADERS* header) {
@@ -120,6 +122,16 @@ DWORD* getSizeOfImage(IMAGE_NT_HEADERS* header) {
     else {
         IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
         return &header64->OptionalHeader.SizeOfImage;
+    }
+}
+
+string getFolder(string path) {
+    size_t index = path.find_last_of("\\/");
+    if (index == string::npos) {
+        return "";
+    }
+    else {
+        return path.substr(0, index);
     }
 }
 
@@ -296,7 +308,12 @@ int main(int argc, char* argv[]) {
     importTableInfo->VirtualAddress = newSectionHeader.VirtualAddress + importInfoSize;
     importTableInfo->Size += sizeof(IMAGE_IMPORT_DESCRIPTOR);
 
-    ofstream outFile(".\\testpe\\out.exe", ios::out | ios::binary | ios::trunc);
+    string folderPath = getFolder(executableName);
+
+    filesystem::path p = executableName;
+    filesystem::copy(dllName, p.replace_filename(dllName));
+    p.replace_filename("out.exe");
+    ofstream outFile(p, ios::out | ios::binary | ios::trunc);
     if (!outFile.is_open()) {
 		char e[255];
 		strerror_s(e, errno);
