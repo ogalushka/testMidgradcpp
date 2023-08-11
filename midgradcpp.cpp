@@ -3,6 +3,10 @@
 #include <Windows.h>
 using namespace std;
 
+bool is32Bit(IMAGE_NT_HEADERS* header) {
+    return header->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC;
+}
+
 DWORD RvaToAbs(DWORD virtualAddress, DWORD sectionSize, IMAGE_SECTION_HEADER* sections, int sectionsCount) {
     for (int i = 0; i < sectionsCount; i++) {
         DWORD start = sections[i].VirtualAddress;
@@ -24,6 +28,99 @@ DWORD RvaToAbs(DWORD virtualAddress, DWORD sectionSize, IMAGE_SECTION_HEADER* se
 DWORD alignAddress(DWORD address, DWORD alingmentSize) {
     float sectionCount = (float)address / alingmentSize;
     return (DWORD)(ceilf(sectionCount) * alingmentSize);
+}
+
+void printFuncImports32(char* file, DWORD address, DWORD sectionAlignment, IMAGE_SECTION_HEADER* sections, int sectionCount) {
+	IMAGE_THUNK_DATA32* nameTables = (IMAGE_THUNK_DATA32*)(file + address);
+
+	for (int j = 0; nameTables[j].u1.Ordinal != 0; j++) {
+
+		if (nameTables[j].u1.Ordinal & IMAGE_ORDINAL_FLAG32) {
+			DWORD ord = (DWORD)(nameTables[j].u1.Ordinal && 0xFFFF);
+			cout << "\t" << ord << "\n";
+		}
+		else {
+			DWORD nAddress = RvaToAbs((DWORD)nameTables[j].u1.AddressOfData, sectionAlignment, sections, sectionCount);
+			IMAGE_IMPORT_BY_NAME* byName = (IMAGE_IMPORT_BY_NAME*)(file + nAddress);
+			cout << "\t" << byName->Name << "\n";
+		}
+	}
+}
+
+void printFuncImports64(char* file, DWORD address, DWORD sectionAlignment, IMAGE_SECTION_HEADER* sections, int sectionCount) {
+	IMAGE_THUNK_DATA64* nameTables = (IMAGE_THUNK_DATA64*)(file + address);
+
+	for (int j = 0; nameTables[j].u1.Ordinal != 0; j++) {
+
+		if (nameTables[j].u1.Ordinal & IMAGE_ORDINAL_FLAG64) {
+			DWORD ord = (DWORD)(nameTables[j].u1.Ordinal && 0xFFFF);
+			cout << "\t" << ord << "\n";
+		}
+		else {
+			DWORD nAddress = RvaToAbs((DWORD)nameTables[j].u1.AddressOfData, sectionAlignment, sections, sectionCount);
+			IMAGE_IMPORT_BY_NAME* byName = (IMAGE_IMPORT_BY_NAME*)(file + nAddress);
+			cout << "\t" << byName->Name << "\n";
+		}
+	}
+}
+
+int getNtHeaderSize(IMAGE_NT_HEADERS* header) {
+    return is32Bit(header) ? sizeof(IMAGE_NT_HEADERS32) : sizeof(IMAGE_NT_HEADERS64);
+}
+
+IMAGE_DATA_DIRECTORY* getImportDataDirectory(IMAGE_NT_HEADERS* header) {
+    if (is32Bit(header)) {
+        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
+        return &(header32->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT]);
+    }
+    else {
+        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
+        return &(header64->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT]);
+    }
+}
+
+DWORD getSectionAlingment(IMAGE_NT_HEADERS* header) {
+    if (is32Bit(header)) {
+        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
+        return header32->OptionalHeader.SectionAlignment;
+    }
+    else {
+        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
+        return header64->OptionalHeader.SectionAlignment;
+    }
+}
+
+DWORD getFileAlingment(IMAGE_NT_HEADERS* header) {
+    if (is32Bit(header)) {
+        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
+        return header32->OptionalHeader.FileAlignment;
+    }
+    else {
+        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
+        return header64->OptionalHeader.FileAlignment;
+    }
+}
+
+DWORD* getSizeOfHeaders(IMAGE_NT_HEADERS* header) {
+    if (is32Bit(header)) {
+        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
+        return &header32->OptionalHeader.SizeOfHeaders;
+    }
+    else {
+        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
+        return &header64->OptionalHeader.SizeOfHeaders;
+    }
+}
+
+DWORD* getSizeOfImage(IMAGE_NT_HEADERS* header) {
+    if (is32Bit(header)) {
+        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
+        return &header32->OptionalHeader.SizeOfImage;
+    }
+    else {
+        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
+        return &header64->OptionalHeader.SizeOfImage;
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -65,10 +162,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    IMAGE_DATA_DIRECTORY* importTableInfo = &peHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    bool is32BitPE = is32Bit(peHeader);
 
-    IMAGE_SECTION_HEADER* sections = (IMAGE_SECTION_HEADER*)(fileBytes + peHeaderOffset + sizeof(IMAGE_NT_HEADERS));
-    DWORD sectionAlignment = peHeader->OptionalHeader.SectionAlignment;
+    IMAGE_DATA_DIRECTORY* importTableInfo = getImportDataDirectory(peHeader);
+
+    IMAGE_SECTION_HEADER* sections = (IMAGE_SECTION_HEADER*)(fileBytes + peHeaderOffset + getNtHeaderSize(peHeader));
+    DWORD sectionAlignment = getSectionAlingment(peHeader);
+    DWORD fileAlignment = getFileAlingment(peHeader);
     WORD sectionCount = peHeader->FileHeader.NumberOfSections;
 
     DWORD absImportAddress = RvaToAbs(importTableInfo->VirtualAddress, sectionAlignment, sections, sectionCount);
@@ -79,7 +179,6 @@ int main(int argc, char* argv[]) {
     }
 
     IMAGE_IMPORT_DESCRIPTOR* imports = (IMAGE_IMPORT_DESCRIPTOR*)(fileBytes + absImportAddress);
-    int importsCount = 0;
 
     for (int i = 0; imports[i].OriginalFirstThunk != 0; i++)
     {
@@ -87,36 +186,27 @@ int main(int argc, char* argv[]) {
         char* name = (char*)(fileBytes + nameAddress);
         cout << name << ":\n";
 
-        DWORD nameTableAddr = RvaToAbs(imports[i].OriginalFirstThunk, sectionAlignment, sections, sectionCount);
-        IMAGE_THUNK_DATA* nameTables = (IMAGE_THUNK_DATA*)(fileBytes + nameTableAddr);
-        IMAGE_THUNK_DATA* nTables = (IMAGE_THUNK_DATA*)(fileBytes + RvaToAbs(imports[i].FirstThunk, sectionAlignment, sections, sectionCount));
-
-        for (int j = 0; nameTables[j].u1.Ordinal != 0; j++) {
-
-            if (nameTables[j].u1.Ordinal & IMAGE_ORDINAL_FLAG) {
-                DWORD ord = (DWORD)(nameTables[j].u1.Ordinal && 0xFFFF);
-                cout << "\t" << ord << "\n";
-            }
-            else {
-                // 32 / 64 diff addresses check
-                DWORD nAddress = RvaToAbs((DWORD)nameTables[j].u1.AddressOfData, sectionAlignment, sections, sectionCount);
-                IMAGE_IMPORT_BY_NAME* byName = (IMAGE_IMPORT_BY_NAME*)(fileBytes + nAddress);
-                cout << "\t" << byName->Name << "\n";
-            }
+        DWORD thunkRVA = imports[i].OriginalFirstThunk ? imports[i].FirstThunk : imports[i].OriginalFirstThunk;
+        DWORD nameTableAddr = RvaToAbs(thunkRVA, sectionAlignment, sections, sectionCount);
+        if (is32BitPE) {
+            printFuncImports32(fileBytes, nameTableAddr, sectionAlignment, sections, sectionCount);
         }
-
-        importsCount = i + 1;
+        else {
+            printFuncImports64(fileBytes, nameTableAddr, sectionAlignment, sections, sectionCount);
+        }
     }
 
     // modify
-    DWORD originalDeclaredHeaderSize = peHeader->OptionalHeader.SizeOfHeaders;
+    DWORD* sizeOfImagePointer = getSizeOfImage(peHeader);
+    DWORD* sizeOfHeadersPointer = getSizeOfHeaders(peHeader);
+    DWORD originalDeclaredHeaderSize = *sizeOfHeadersPointer;
 	DWORD originalActualHeaderSize = (DWORD)((char*)&sections[sectionCount] - fileBytes);
     DWORD updatedActualHeaderSize = originalActualHeaderSize + sizeof(IMAGE_SECTION_HEADER);
     int sizeDiff = updatedActualHeaderSize - originalDeclaredHeaderSize;
 
     int headerSizeIncrease = 0;
     if (sizeDiff > 0) {
-        headerSizeIncrease = alignAddress(sizeDiff, peHeader->OptionalHeader.FileAlignment);
+        headerSizeIncrease = alignAddress(sizeDiff, fileAlignment);
     }
 
     DWORD updatedDeclaredHeaderSize = originalDeclaredHeaderSize + headerSizeIncrease;
@@ -134,13 +224,13 @@ int main(int argc, char* argv[]) {
     
     sectionsEndVA = alignAddress(sectionsEndVA, sectionAlignment);
 
-    absImportAddress;
-    importTableInfo->Size;
-
     // NOTE: Assuming parsing the dll export talbe is not in the scope of the task.
     DWORD sectionPos = (DWORD)sectionsEndVA;
 
-    const char* dllName = "dll.dll";
+    const char* dll64 = "dll64.dll";
+    const char* dll32 = "dll32.dll";
+
+    const char* dllName = is32BitPE ? dll32 : dll64;
     DWORD dllNameAddress = sectionPos;
     sectionPos += (DWORD)(strlen(dllName) + 1);
 
@@ -152,28 +242,48 @@ int main(int argc, char* argv[]) {
     DWORD funcNameAddress = sectionPos;
     sectionPos += (DWORD)(strlen(functionName) + 1);
     
-    IMAGE_THUNK_DATA newThunks[4]{};
-    DWORD newThunksAddress = sectionPos;
-    sectionPos += sizeof(IMAGE_THUNK_DATA) * 4;
+    char* thunks;
 
-    newThunks[0].u1.AddressOfData = hintAddress;
-    newThunks[1].u1.AddressOfData = 0;
-    newThunks[2].u1.AddressOfData = hintAddress;
-    newThunks[3].u1.AddressOfData = 0;
+    IMAGE_THUNK_DATA32 newThunks32[4]{};
+    IMAGE_THUNK_DATA64 newThunks64[4]{};
+    DWORD newOriginalThunksAddress = sectionPos;
+    DWORD newThunksAddress;
+    DWORD thunksSize;
+
+    if (is32BitPE) {
+        thunks = (char*)newThunks32;
+        thunksSize = sizeof(IMAGE_THUNK_DATA32) * 4;
+		newThunks32[0].u1.AddressOfData = hintAddress;
+		newThunks32[1].u1.AddressOfData = 0;
+		newThunks32[2].u1.AddressOfData = hintAddress;
+		newThunks32[3].u1.AddressOfData = 0;
+        newThunksAddress = newOriginalThunksAddress + sizeof(IMAGE_THUNK_DATA32) * 2;
+    }
+    else {
+        thunks = (char*)newThunks64;
+        thunksSize = sizeof(IMAGE_THUNK_DATA64) * 4;
+		newThunks64[0].u1.AddressOfData = hintAddress;
+		newThunks64[1].u1.AddressOfData = 0;
+		newThunks64[2].u1.AddressOfData = hintAddress;
+		newThunks64[3].u1.AddressOfData = 0;
+        newThunksAddress = newOriginalThunksAddress + sizeof(IMAGE_THUNK_DATA64) * 2;
+    }
+
+    sectionPos += thunksSize;
 
     DWORD importInfoSize = sectionPos - sectionsEndVA;
     DWORD totalSectionSize = importInfoSize + sizeof(IMAGE_IMPORT_DESCRIPTOR) + importTableInfo->Size;
 
     IMAGE_IMPORT_DESCRIPTOR descriptor{};
-    descriptor.OriginalFirstThunk = newThunksAddress;
-    descriptor.FirstThunk = newThunksAddress + (sizeof(IMAGE_THUNK_DATA) * 2);
+    descriptor.OriginalFirstThunk = newOriginalThunksAddress;
+    descriptor.FirstThunk = newThunksAddress;
     descriptor.Name = dllNameAddress;
 
     IMAGE_SECTION_HEADER newSectionHeader{};
     const char* sectionName = ".newImp";
     memcpy(newSectionHeader.Name, ".newImp", 7);
     newSectionHeader.PointerToRawData = (DWORD)size + headerSizeIncrease;
-    newSectionHeader.SizeOfRawData = alignAddress(totalSectionSize, peHeader->OptionalHeader.FileAlignment);
+    newSectionHeader.SizeOfRawData = alignAddress(totalSectionSize, fileAlignment);
     newSectionHeader.VirtualAddress = sectionsEndVA;
     newSectionHeader.Misc.VirtualSize = alignAddress(totalSectionSize, sectionAlignment);
     newSectionHeader.Characteristics = IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE;
@@ -181,8 +291,8 @@ int main(int argc, char* argv[]) {
     DWORD lastSectionHeaderOffset = (DWORD)((char*)&sections[peHeader->FileHeader.NumberOfSections] - fileBytes);
 
     peHeader->FileHeader.NumberOfSections++;
-    peHeader->OptionalHeader.SizeOfHeaders = updatedDeclaredHeaderSize;
-    peHeader->OptionalHeader.SizeOfImage = newSectionHeader.VirtualAddress + newSectionHeader.Misc.VirtualSize;
+    *sizeOfHeadersPointer = updatedDeclaredHeaderSize;
+    *sizeOfImagePointer = newSectionHeader.VirtualAddress + newSectionHeader.Misc.VirtualSize;
     importTableInfo->VirtualAddress = newSectionHeader.VirtualAddress + importInfoSize;
     importTableInfo->Size += sizeof(IMAGE_IMPORT_DESCRIPTOR);
 
@@ -211,7 +321,7 @@ int main(int argc, char* argv[]) {
     outFile.write((char*)&hint, sizeof(WORD));
     outFile.write(functionName, strlen(functionName));
     outFile.write(&z, sizeof(char));
-    outFile.write((char*)newThunks, sizeof(IMAGE_THUNK_DATA) * 4);
+    outFile.write((char*)thunks, thunksSize);
 
     for (int i = 0; imports[i].OriginalFirstThunk != 0; i++) {
 		outFile.write((char*)&imports[i], sizeof(IMAGE_IMPORT_DESCRIPTOR));
@@ -227,5 +337,6 @@ int main(int argc, char* argv[]) {
     }
     outFile.close();
 
+    delete[] fileBytes;
     return 0;
 }
