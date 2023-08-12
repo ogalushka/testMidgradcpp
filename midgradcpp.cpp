@@ -1,139 +1,20 @@
 #include <iostream>
 #include <fstream>
-#include <string>
 #include <Windows.h>
 #include <filesystem>
 using namespace std;
 
-bool is32Bit(IMAGE_NT_HEADERS* header) {
-    return header->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC;
-}
-
-DWORD RvaToAbs(DWORD virtualAddress, DWORD sectionSize, IMAGE_SECTION_HEADER* sections, int sectionsCount) {
-    for (int i = 0; i < sectionsCount; i++) {
-        DWORD start = sections[i].VirtualAddress;
-        DWORD size = sections[i].Misc.VirtualSize;
-
-        int fullSections = size / sectionSize;
-        int totalSections = fullSections * sectionSize < size ? fullSections + 1 : fullSections;
-
-        DWORD end = start + totalSections * sectionSize;
-
-        if (virtualAddress >= start && virtualAddress < end) {
-            return virtualAddress - sections[i].VirtualAddress + sections[i].PointerToRawData;
-        }
-    }
-
-    return 0;
-}
-
-DWORD alignAddress(DWORD address, DWORD alingmentSize) {
-    float sectionCount = (float)address / alingmentSize;
-    return (DWORD)(ceilf(sectionCount) * alingmentSize);
-}
-
-void printFuncImports32(char* file, DWORD address, DWORD sectionAlignment, IMAGE_SECTION_HEADER* sections, int sectionCount) {
-	IMAGE_THUNK_DATA32* nameTables = (IMAGE_THUNK_DATA32*)(file + address);
-
-	for (int j = 0; nameTables[j].u1.Ordinal != 0; j++) {
-
-		if (nameTables[j].u1.Ordinal & IMAGE_ORDINAL_FLAG32) {
-			DWORD ord = (DWORD)(nameTables[j].u1.Ordinal && 0xFFFF);
-			cout << "\t" << ord << "\n";
-		}
-		else {
-			DWORD nAddress = RvaToAbs((DWORD)nameTables[j].u1.AddressOfData, sectionAlignment, sections, sectionCount);
-			IMAGE_IMPORT_BY_NAME* byName = (IMAGE_IMPORT_BY_NAME*)(file + nAddress);
-			cout << "\t" << byName->Name << "\n";
-		}
-	}
-}
-
-void printFuncImports64(char* file, DWORD address, DWORD sectionAlignment, IMAGE_SECTION_HEADER* sections, int sectionCount) {
-	IMAGE_THUNK_DATA64* nameTables = (IMAGE_THUNK_DATA64*)(file + address);
-
-	for (int j = 0; nameTables[j].u1.Ordinal != 0; j++) {
-
-		if (nameTables[j].u1.Ordinal & IMAGE_ORDINAL_FLAG64) {
-			DWORD ord = (DWORD)(nameTables[j].u1.Ordinal && 0xFFFF);
-			cout << "\t" << ord << "\n";
-		}
-		else {
-			DWORD nAddress = RvaToAbs((DWORD)nameTables[j].u1.AddressOfData, sectionAlignment, sections, sectionCount);
-			IMAGE_IMPORT_BY_NAME* byName = (IMAGE_IMPORT_BY_NAME*)(file + nAddress);
-			cout << "\t" << byName->Name << "\n";
-		}
-	}
-}
-
-int getNtHeaderSize(IMAGE_NT_HEADERS* header) {
-    return is32Bit(header) ? sizeof(IMAGE_NT_HEADERS32) : sizeof(IMAGE_NT_HEADERS64);
-}
-
-IMAGE_DATA_DIRECTORY* getImportDataDirectory(IMAGE_NT_HEADERS* header) {
-    if (is32Bit(header)) {
-        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
-        return &(header32->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT]);
-    }
-    else {
-        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
-        return &(header64->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT]);
-    }
-}
-
-DWORD getSectionAlingment(IMAGE_NT_HEADERS* header) {
-    if (is32Bit(header)) {
-        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
-        return header32->OptionalHeader.SectionAlignment;
-    }
-    else {
-        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
-        return header64->OptionalHeader.SectionAlignment;
-    }
-}
-
-DWORD getFileAlingment(IMAGE_NT_HEADERS* header) {
-    if (is32Bit(header)) {
-        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
-        return header32->OptionalHeader.FileAlignment;
-    }
-    else {
-        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
-        return header64->OptionalHeader.FileAlignment;
-    }
-}
-
-DWORD* getSizeOfHeaders(IMAGE_NT_HEADERS* header) {
-    if (is32Bit(header)) {
-        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
-        return &header32->OptionalHeader.SizeOfHeaders;
-    }
-    else {
-        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
-        return &header64->OptionalHeader.SizeOfHeaders;
-    }
-}
-
-DWORD* getSizeOfImage(IMAGE_NT_HEADERS* header) {
-    if (is32Bit(header)) {
-        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
-        return &header32->OptionalHeader.SizeOfImage;
-    }
-    else {
-        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
-        return &header64->OptionalHeader.SizeOfImage;
-    }
-}
-
-string getFolder(string path) {
-    size_t index = path.find_last_of("\\/");
-    if (index == string::npos) {
-        return "";
-    }
-    else {
-        return path.substr(0, index);
-    }
-}
+bool is32Bit(IMAGE_NT_HEADERS* header);
+DWORD RvaToAbs(DWORD virtualAddress, DWORD sectionSize, IMAGE_SECTION_HEADER* sections, int sectionsCount);
+DWORD alignAddress(DWORD address, DWORD alingmentSize);
+void printFuncImports32(char* file, DWORD address, DWORD sectionAlignment, IMAGE_SECTION_HEADER* sections, int sectionCount);
+void printFuncImports64(char* file, DWORD address, DWORD sectionAlignment, IMAGE_SECTION_HEADER* sections, int sectionCount);
+int getNtHeaderSize(IMAGE_NT_HEADERS* header);
+IMAGE_DATA_DIRECTORY* getImportDataDirectory(IMAGE_NT_HEADERS* header);
+DWORD getSectionAlingment(IMAGE_NT_HEADERS* header);
+DWORD getFileAlingment(IMAGE_NT_HEADERS* header);
+DWORD* getSizeOfHeaders(IMAGE_NT_HEADERS* header);
+DWORD* getSizeOfImage(IMAGE_NT_HEADERS* header);
 
 int main(int argc, char* argv[]) {
     if (argc != 2) {
@@ -308,10 +189,9 @@ int main(int argc, char* argv[]) {
     importTableInfo->VirtualAddress = newSectionHeader.VirtualAddress + importInfoSize;
     importTableInfo->Size += sizeof(IMAGE_IMPORT_DESCRIPTOR);
 
-    string folderPath = getFolder(executableName);
-
     filesystem::path p = executableName;
-    filesystem::copy(dllName, p.replace_filename(dllName));
+    const filesystem::copy_options options = filesystem::copy_options::overwrite_existing;
+    filesystem::copy_file(dllName, p.replace_filename(dllName), options);
     p.replace_filename("out.exe");
     ofstream outFile(p, ios::out | ios::binary | ios::trunc);
     if (!outFile.is_open()) {
@@ -331,10 +211,9 @@ int main(int argc, char* argv[]) {
 
     outFile.write(fileBytes + originalDeclaredHeaderSize, (int)size - originalDeclaredHeaderSize);
 
-    //new section start
     outFile.write(dllName, strlen(dllName));
     outFile.write(&z, sizeof(char));
-    // IMAGE INPORT BY NAME
+
     outFile.write((char*)&hint, sizeof(WORD));
     outFile.write(functionName, strlen(functionName));
     outFile.write(&z, sizeof(char));
@@ -356,4 +235,124 @@ int main(int argc, char* argv[]) {
 
     delete[] fileBytes;
     return 0;
+}
+
+bool is32Bit(IMAGE_NT_HEADERS* header) {
+    return header->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC;
+}
+
+DWORD RvaToAbs(DWORD virtualAddress, DWORD sectionSize, IMAGE_SECTION_HEADER* sections, int sectionsCount) {
+    for (int i = 0; i < sectionsCount; i++) {
+        DWORD start = sections[i].VirtualAddress;
+        DWORD size = sections[i].Misc.VirtualSize;
+
+        int fullSections = size / sectionSize;
+        int totalSections = fullSections * sectionSize < size ? fullSections + 1 : fullSections;
+
+        DWORD end = start + totalSections * sectionSize;
+
+        if (virtualAddress >= start && virtualAddress < end) {
+            return virtualAddress - sections[i].VirtualAddress + sections[i].PointerToRawData;
+        }
+    }
+
+    return 0;
+}
+
+DWORD alignAddress(DWORD address, DWORD alingmentSize) {
+    float sectionCount = (float)address / alingmentSize;
+    return (DWORD)(ceilf(sectionCount) * alingmentSize);
+}
+
+void printFuncImports32(char* file, DWORD address, DWORD sectionAlignment, IMAGE_SECTION_HEADER* sections, int sectionCount) {
+	IMAGE_THUNK_DATA32* nameTables = (IMAGE_THUNK_DATA32*)(file + address);
+
+	for (int j = 0; nameTables[j].u1.Ordinal != 0; j++) {
+
+		if (nameTables[j].u1.Ordinal & IMAGE_ORDINAL_FLAG32) {
+			DWORD ord = (DWORD)(nameTables[j].u1.Ordinal && 0xFFFF);
+			cout << "\t" << ord << "\n";
+		}
+		else {
+			DWORD nAddress = RvaToAbs((DWORD)nameTables[j].u1.AddressOfData, sectionAlignment, sections, sectionCount);
+			IMAGE_IMPORT_BY_NAME* byName = (IMAGE_IMPORT_BY_NAME*)(file + nAddress);
+			cout << "\t" << byName->Name << "\n";
+		}
+	}
+}
+
+void printFuncImports64(char* file, DWORD address, DWORD sectionAlignment, IMAGE_SECTION_HEADER* sections, int sectionCount) {
+	IMAGE_THUNK_DATA64* nameTables = (IMAGE_THUNK_DATA64*)(file + address);
+
+	for (int j = 0; nameTables[j].u1.Ordinal != 0; j++) {
+
+		if (nameTables[j].u1.Ordinal & IMAGE_ORDINAL_FLAG64) {
+			DWORD ord = (DWORD)(nameTables[j].u1.Ordinal && 0xFFFF);
+			cout << "\t" << ord << "\n";
+		}
+		else {
+			DWORD nAddress = RvaToAbs((DWORD)nameTables[j].u1.AddressOfData, sectionAlignment, sections, sectionCount);
+			IMAGE_IMPORT_BY_NAME* byName = (IMAGE_IMPORT_BY_NAME*)(file + nAddress);
+			cout << "\t" << byName->Name << "\n";
+		}
+	}
+}
+
+int getNtHeaderSize(IMAGE_NT_HEADERS* header) {
+    return is32Bit(header) ? sizeof(IMAGE_NT_HEADERS32) : sizeof(IMAGE_NT_HEADERS64);
+}
+
+IMAGE_DATA_DIRECTORY* getImportDataDirectory(IMAGE_NT_HEADERS* header) {
+    if (is32Bit(header)) {
+        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
+        return &(header32->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT]);
+    }
+    else {
+        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
+        return &(header64->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT]);
+    }
+}
+
+DWORD getSectionAlingment(IMAGE_NT_HEADERS* header) {
+    if (is32Bit(header)) {
+        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
+        return header32->OptionalHeader.SectionAlignment;
+    }
+    else {
+        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
+        return header64->OptionalHeader.SectionAlignment;
+    }
+}
+
+DWORD getFileAlingment(IMAGE_NT_HEADERS* header) {
+    if (is32Bit(header)) {
+        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
+        return header32->OptionalHeader.FileAlignment;
+    }
+    else {
+        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
+        return header64->OptionalHeader.FileAlignment;
+    }
+}
+
+DWORD* getSizeOfHeaders(IMAGE_NT_HEADERS* header) {
+    if (is32Bit(header)) {
+        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
+        return &header32->OptionalHeader.SizeOfHeaders;
+    }
+    else {
+        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
+        return &header64->OptionalHeader.SizeOfHeaders;
+    }
+}
+
+DWORD* getSizeOfImage(IMAGE_NT_HEADERS* header) {
+    if (is32Bit(header)) {
+        IMAGE_NT_HEADERS32* header32 = (IMAGE_NT_HEADERS32*)header;
+        return &header32->OptionalHeader.SizeOfImage;
+    }
+    else {
+        IMAGE_NT_HEADERS64* header64 = (IMAGE_NT_HEADERS64*)header;
+        return &header64->OptionalHeader.SizeOfImage;
+    }
 }
